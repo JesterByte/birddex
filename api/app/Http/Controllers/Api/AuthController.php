@@ -60,7 +60,7 @@ class AuthController extends Controller
                 'email' => $payload['email'],
                 'google_id' => $payload['sub'],
                 'avatar' => $payload['picture'] ?? null,
-                'password' => Str::random(24),
+                'password' => Str::random(64),
                 'email_verified_at' => now()
             ]);
 
