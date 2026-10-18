@@ -10,6 +10,11 @@ jobs:
   laravel-tests:
     runs-on: ubuntu-latest
 
+    # This tells every step below to automatically run inside the 'api/' directory
+    defaults:
+      run:
+        working-directory: ./api
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -17,12 +22,12 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3' # Match your local/production PHP version
+          php-version: '8.3'
           extensions: mbstring, dom, fileinfo, pdo_sqlite, pgsql, pdo_pgsql
           coverage: none
 
       - name: Copy .env
-        run: php -r "file_exists('api/.env') || copy('api/.env.example', 'api/.env');"
+        run: php -r "file_exists('.env') || copy('.env.example', '.env');"
 
       - name: Install Dependencies
         run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
