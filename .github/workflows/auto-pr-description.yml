@@ -1,0 +1,30 @@
+name: Auto PR Description with Gemini
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  generate-description:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate PR Summary using Gemini
+        uses: anc95/ChatGPT-CodeReview@main # (Or a specialized Gemini PR action)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_BASE: "https://generativelanguage.googleapis.com/v1beta/openai/"
+          OPENAI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CUSTOM_MODEL: "gemini-1.5-flash" # Uses Google's fast and free tier model
+          PROMPT: "Analyze the git diff and write a concise pull request description summarizing the changes made."
