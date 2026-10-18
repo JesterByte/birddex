@@ -7,13 +7,14 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use Throwable;
-use Google\Client as GoogleClient;
 use Illuminate\Support\Facades\DB;
+use App\Services\GoogleTokenVerifier;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
-    public function google(Request $request): JsonResponse
+    public function google(Request $request, GoogleTokenVerifier $googleTokenVerifier): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'id_token' => ['required', 'string', 'max:10000']
@@ -26,17 +27,7 @@ class AuthController extends Controller
             ], 422);
         }
 
-        try {
-            $client = new GoogleClient([
-                'client_id' => config('services.google.client_id')
-            ]);
-
-            $payload = $client->verifyIdToken($request->input('id_token'));
-        } catch (Throwable $exception) {
-            report($exception);
-
-            $payload = false;
-        }
+        $payload = $googleTokenVerifier->verify($request->input('id_token'));
 
         if (
             ! is_array($payload)
@@ -75,6 +66,7 @@ class AuthController extends Controller
                 'email' => $payload['email'],
                 'google_id' => $payload['sub'],
                 'avatar' => $payload['picture'] ?? null,
+                'password' => Hash::make(Str::random(24)),
                 'email_verified_at' => now()
             ]);
         });
