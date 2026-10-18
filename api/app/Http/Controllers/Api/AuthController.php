@@ -31,15 +31,14 @@ class AuthController extends Controller
 
         if (
             ! is_array($payload)
-            || empty($payload['sub'])
-            || empty($payload['email'])
-            || !filter_var(
-                $payload['email_verified'] ?? false,
-                FILTER_VALIDATE_BOOLEAN
-            )
+            || ! is_string($payload['sub'] ?? null)
+            || $payload['sub'] === ''
+            || ! filter_var($payload['email'] ?? null, FILTER_VALIDATE_EMAIL)
+            || ($payload['email_verified'] ?? false) !== true
         ) {
             return response()->json([
-                'message' => 'Invalid or unverified Google account.'
+                'message' => 'Invalid or unverified Google account.',
+                'code' => 'invalid_google_identity',
             ], 401);
         }
 
@@ -47,21 +46,16 @@ class AuthController extends Controller
             $user = User::query()->where('google_id', $payload['sub'])->first();
 
             if ($user) {
-                return $user;
+                return ['user' => $user, 'conflict' => false];
             }
 
-            $user = User::query()->where('email', $payload['email'])->first();
+            $existingEmailUser = User::query()->where('email', $payload['email'])->first();
 
-            if ($user) {
-                $user->forceFill([
-                    'google_id' => $payload['sub'],
-                    'email_verified_at' => $user->email_verified_at ?? now()
-                ])->save();
-
-                return $user;
+            if ($existingEmailUser) {
+                return ['user' => null, 'conflict' => true];
             }
 
-            return User::create([
+            $user = User::create([
                 'name' => $payload['name'] ?? 'BirdDex User',
                 'email' => $payload['email'],
                 'google_id' => $payload['sub'],
@@ -69,7 +63,19 @@ class AuthController extends Controller
                 'password' => Hash::make(Str::random(24)),
                 'email_verified_at' => now()
             ]);
+
+            return ['user' => $user, 'conflict' => false];
         });
+
+        if ($user['conflict']) {
+            return response()->json([
+                'message' => 'An account with this email already exists. '
+                    . 'Sign in using its existing method or contact support.',
+                'code' => 'account_linking_required',
+            ], 409);
+        }
+
+        $user = $user['user'];
 
         $token = $user->createToken(
             'birddex-web',
