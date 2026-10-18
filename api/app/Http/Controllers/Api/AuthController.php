@@ -9,7 +9,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use App\Services\GoogleTokenVerifier;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class AuthController extends Controller
@@ -41,6 +40,8 @@ class AuthController extends Controller
                 'code' => 'invalid_google_identity',
             ], 401);
         }
+
+        $payload['email'] = strtolower(trim($payload['email']));
 
         $user = DB::transaction(function () use ($payload) {
             $user = User::query()->where('google_id', $payload['sub'])->first();

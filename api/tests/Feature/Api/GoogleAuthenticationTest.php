@@ -157,7 +157,6 @@ it('revokes the current Sanctum token on logout', function () {
     $this->assertDatabaseCount('personal_access_tokens', 0);
 });
 
-
 it('does not silently link an existing email account', function () {
     $existingUser = User::factory()->create([
         'email' => 'bird@example.com',
@@ -182,7 +181,6 @@ it('does not silently link an existing email account', function () {
     $this->assertDatabaseCount('personal_access_tokens', 0);
 });
 
-
 it('rejects an expired Sanctum token', function () {
     $user = User::factory()->create();
 
@@ -197,14 +195,12 @@ it('rejects an expired Sanctum token', function () {
         ->assertUnauthorized();
 });
 
-
 it('returns JSON for unauthenticated API requests without an Accept header', function () {
-    // Force the header in the test call if testing raw requests
-    $this->withHeader('Accept', 'application/json')
-        ->getJson('/api/user')
-        ->assertUnauthorized();
-});
 
+    $this->call('GET', '/api/user')
+        ->assertUnauthorized()
+        ->assertHeader('Content-Type', 'application/json');
+});
 
 it('rate limits repeated Google authentication attempts', function () {
     for ($i = 0; $i < 5; $i++) {
