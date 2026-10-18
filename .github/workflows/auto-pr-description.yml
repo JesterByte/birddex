@@ -14,17 +14,83 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Fetch last commits to get the diff
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Generate PR Summary using Gemini
-        uses: anc95/ChatGPT-CodeReview@main # (Or a specialized Gemini PR action)
+      - name: Generate and Update PR Description
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OPENAI_API_BASE: "https://generativelanguage.googleapis.com/v1beta/openai/"
-          OPENAI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          CUSTOM_MODEL: "gemini-1.5-flash" # Uses Google's fast and free tier model
-          PROMPT: "Analyze the git diff and write a concise pull request description summarizing the changes made."
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          node -e '
+          async function run() {
+            const https = require("https");
+            
+            // 1. Get the git diff of the PR
+            const { execSync } = require("child_process");
+            const diff = execSync("git diff HEAD~1 HEAD").toString();
+
+            if (!diff.trim()) {
+              console.log("No diff found.");
+              return;
+            }
+
+            // 2. Call Gemini API natively using the new endpoint format
+            const prompt = "Analyze this git diff and write a concise, professional pull request summary using Markdown bullet points:\n\n" + diff.slice(0, 15000); // Truncate to stay within safe token limits
+            
+            const data = JSON.stringify({
+              contents: [{
+                parts: [{ text: prompt }]
+              }]
+            });
+
+            const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + process.env.GEMINI_API_KEY;
+            
+            const responseText = await new Promise((resolve, reject) => {
+              const req = https.request(url, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                }
+              }, res => {
+                let body = "";
+                res.on("data", chunk => body += chunk);
+                res.on("end", () => resolve(body));
+              });
+              req.on("error", reject);
+              req.write(data);
+              req.end();
+            });
+
+            const json = JSON.parse(responseText);
+            const description = json.candidates?.[0]?.content?.parts?.[0]?.text || "Automated summary generation failed.";
+
+            // 3. Update the Pull Request using GitHub API
+            const updateData = JSON.stringify({ body: description });
+            const ghReq = https.request(`https://api.github.com/repos/${process.env.REPO}/pulls/${process.env.PR_NUMBER}`, {
+              method: "PATCH",
+              headers: {
+                "Authorization": `Bearer ${process.env.GITHUB_TOKEN}`,
+                "User-Agent": "GitHub-Action",
+                "Content-Type": "application/json"
+              }
+            }, res => {
+              let body = "";
+              res.on("data", chunk => body += chunk);
+              res.on("end", () => console.log("PR updated successfully:", body));
+            });
+            ghReq.write(updateData);
+            ghReq.end();
+          }
+          run().catch(err => {
+            console.error(err);
+            process.exit(1);
+          });
+          '
