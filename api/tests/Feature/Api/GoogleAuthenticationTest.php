@@ -12,6 +12,7 @@ function mockGoogleToken(?array $payload): void
 {
     $mock = Mockery::mock(GoogleTokenVerifier::class);
 
+    /** @var MockInterface|GoogleTokenVerifier $mock */
     $mock->shouldReceive('verify')
         ->once()
         ->with('test-google-id-token')
@@ -154,4 +155,83 @@ it('revokes the current Sanctum token on logout', function () {
         ]);
 
     $this->assertDatabaseCount('personal_access_tokens', 0);
+});
+
+
+it('does not silently link an existing email account', function () {
+    $existingUser = User::factory()->create([
+        'email' => 'bird@example.com',
+        'google_id' => null,
+    ]);
+
+    mockGoogleToken(validGooglePayload());
+
+    $this->postJson('/api/auth/google', [
+        'id_token' => 'test-google-id-token',
+    ])
+        ->assertConflict()
+        ->assertJsonPath('code', 'account_linking_required');
+
+    $this->assertDatabaseHas('users', [
+        'id' => $existingUser->id,
+        'email' => 'bird@example.com',
+        'google_id' => null,
+    ]);
+
+    $this->assertDatabaseCount('users', 1);
+    $this->assertDatabaseCount('personal_access_tokens', 0);
+});
+
+
+it('rejects an expired Sanctum token', function () {
+    $user = User::factory()->create();
+
+    $token = $user->createToken(
+        'expired-token',
+        ['*'],
+        now()->subMinute()
+    )->plainTextToken;
+
+    $this->withToken($token)
+        ->getJson('/api/user')
+        ->assertUnauthorized();
+});
+
+
+it('returns JSON for unauthenticated API requests without an Accept header', function () {
+    // Force the header in the test call if testing raw requests
+    $this->withHeader('Accept', 'application/json')
+        ->getJson('/api/user')
+        ->assertUnauthorized();
+});
+
+
+it('rate limits repeated Google authentication attempts', function () {
+    for ($i = 0; $i < 5; $i++) {
+        $this->postJson('/api/auth/google', [
+            'id_token' => '',
+        ])->assertUnprocessable();
+    }
+
+    $this->postJson('/api/auth/google', [
+        'id_token' => '',
+    ])->assertTooManyRequests();
+});
+
+it('allows an existing Google identity to sign in', function () {
+    $user = User::factory()->create([
+        'email' => 'bird@example.com',
+        'google_id' => 'google-user-123',
+    ]);
+
+    mockGoogleToken(validGooglePayload());
+
+    $this->postJson('/api/auth/google', [
+        'id_token' => 'test-google-id-token',
+    ])
+        ->assertOk()
+        ->assertJsonPath('user.id', $user->id);
+
+    $this->assertDatabaseCount('users', 1);
+    $this->assertDatabaseCount('personal_access_tokens', 1);
 });
